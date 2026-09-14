@@ -348,6 +348,31 @@ wilcox.test(as.integer(hosp_df$consulting_time),
             as.integer(no_hosp_df$consulting_time))
 
 ################################################################################
+library(fitdistrplus)
+
+df_2_plot <- df_confirm %>%
+  mutate(nom_eve = if_else(nom_eve == "DENGUE", "DENGUE", "SEVERE DENGUE")) %>%
+  rename(Class = nom_eve)
+
+ggplot(data = df_2_plot, na.rm =TRUE) + 
+  geom_histogram(aes(x = deterioration_time, y = ..density.., fill = Class), position = "identity", binwidth = 1,  alpha = 0.3) +
+  geom_density(aes(x = deterioration_time, color = Class), adjust = 2) +
+  theme_bw() +
+  theme(
+    panel.border = element_blank(),
+    legend.position = c(0.85, 0.5)
+        ) +
+  xlab("Time from symptoms onset to hospitalization (days)")
+
+ggplot(data = df_2_plot, na.rm =TRUE) + 
+  geom_histogram(aes(x = consulting_time, y = ..density.., fill = Class), position = "identity", binwidth = 1,  alpha = 0.3) +
+  geom_density(aes(x = consulting_time, color = Class), adjust = 2.8) +
+  theme_bw() +
+  theme(
+    panel.border = element_blank(),
+    legend.position = c(0.85, 0.5)
+  ) +
+  xlab("Time to medical consultation (days)")
 ################################## For dengue ##################################
 ################################################################################
 hosp_dengue_df <- df_confirm[!is.na(df_confirm$deterioration_time), ] %>%
@@ -363,23 +388,26 @@ wilcox.test(as.integer(hosp_dengue_df$deterioration_time), as.integer(hosp_dengu
 ######## estimation for NOT hospitalized patients: consulting_time
 hist(as.integer(no_hosp_dengue_df[, "consulting_time"]))
 r1 <- delay_estimation(no_hosp_dengue_df[, "consulting_time"], 15, "Medical consultation time for not hospitalized patients")
-r1$graph; r1$Weib_est$MAPE; r1$Lognorm_est$MAPE; r1$poiss_est$MAPE
+r1$graph; r1$nbinom_est$MAPE; r1$Weib_est$MAPE; r1$Lognorm_est$MAPE
 
 ######## estimation for hospitalized patients: consulting_time
 hist(as.integer(hosp_dengue_df[, "consulting_time"]))
 r2 <- delay_estimation(hosp_dengue_df[, "consulting_time"], 15, "Medical consultation time for hospitalized patients")
-r2$graph; r2$Weib_est$MAPE; r2$Lognorm_est$MAPE; r2$poiss_est$MAPE
+r2$graph; r2$nbinom_est$MAPE; r2$Weib_est$MAPE; r2$Lognorm_est$MAPE
 
 ################ Deterioration time: symptoms onset to hospitalization ###################
 hist(as.integer(hosp_dengue_df[, "deterioration_time"]))
 r3 <- delay_estimation(hosp_dengue_df[, "deterioration_time"], 15, "Symptoms onset to hospitalization")
-r3$graph; r3$Weib_est$MAPE; r3$Lognorm_est$MAPE; r3$poiss_est$MAPE
+r3$graph; r3$nbinom_est$MAPE; r3$Weib_est$MAPE; r3$Lognorm_est$MAPE
 
 ################ Lack time: consultation to hospitalization ###################
 barplot(table(hosp_dengue_df$diff)/sum(table(hosp_dengue_df$diff)))
-
 r4 <- delay_estimation(hosp_dengue_df[, "diff"], 8, "Medical consultation to hospitalization", "exp")
-r4$graph; r4$Weib_est$MAPE; r4$Exp_est$MAPE; r4$poiss_est$MAPE
+r4$graph; r4$Weib_est$MAPE; r4$Exp_est$MAPE; r4$nbinom_est$MAPE
+
+ggarrange(r1$graph, r2$graph, r3$graph, r4$graph,
+          labels = c("(a)", "(b)", "(c)", "(d)"),
+          ncol = 2, nrow =2)
 
 ######################### dengue continuos estimation ###############################
 x <- seq(0, 15, 0.1)
@@ -389,43 +417,65 @@ continuos_dengue <- data.frame("x" = c(x, x, x, x[-1:-4]),
                                        levels = c("Consultation (Not hosp.)", "Consultation (Hosp.)", "Hospitalization", "Cons. to hosp."))
   )
 
-ggplot()  +
+a <- ggplot()  +
   geom_line(data = continuos_dengue, 
-            aes(x = x,y = fx, linetype = delayTime, color = delayTime),  size = 1) +
+            aes(x = x,y = fx, linetype = delayTime, color = delayTime),  size = 0.6) +
   labs(title = "Weibull estimation for Dengue delay times",
        color = "delayTime", size = 0.7) +
-  guides(color=guide_legend(nrow = 1,byrow=TRUE)) +
-  theme(legend.title = element_blank(), legend.position = "top", 
+  guides(color = guide_legend(nrow = 1,byrow=TRUE)) +
+  theme_bw() +
+  theme(legend.title = element_blank(), #legend.position = "top", 
         panel.background = element_blank(),
-        plot.title = element_text(hjust = 0.5)) + 
+        legend.position = c(0.99, 1),
+        legend.justification='right',
+        legend.direction='horizontal',
+        legend.text = element_text(size = 8),
+        plot.title = element_text(hjust = 0.5),
+        panel.border = element_blank(),  # Remove all borders
+        axis.line.x = element_line(color = "black"),  # Add back x-axis line
+        axis.line.y = element_line(color = "black")) + 
   xlab("Time (days)") +
-  scale_colour_grey() +
-  ylab(NULL) 
+  scale_color_manual(values = c("#1e1e2b", "grey", "#2c2c94", "#791515")) +
+  #scale_colour_grey() +
+  ylab("Probability density") 
 
 ######################### dengue discrete estimation ###############################
 x1 <- seq(0, 15)
 discrete_dengue <- data.frame("x" = c(x1, x1, x1, x1[1:9]), 
-                              "fx" = c(dpois(x1, r1$poiss_est$lambda), dpois(x1, r2$poiss_est$lambda), dpois(x1, r3$poiss_est$lambda), dpois(x1[1:9], r4$poiss_est$lambda)),
+                              "fx" = c(dnbinom(x1, size = r1$nbinom_est$size, mu = r1$nbinom_est$mu), dnbinom(x1, size = r2$nbinom_est$size, mu = r2$nbinom_est$mu), dnbinom(x1, size = r3$nbinom_est$size, mu = r3$nbinom_est$mu), dnbinom(x1[1:9],size = r4$nbinom_est$size, mu = r4$nbinom_est$mu)),
                               "Legend" = factor(c(rep("Consultation (Not hosp.)", length(x1)), rep("Consultation (Hosp.)", length(x1)), rep("Hospitalization", length(x1)), rep("Cons. to hosp.", length(x1[1:9]))),
                                                 levels = c("Consultation (Not hosp.)", "Consultation (Hosp.)", "Hospitalization", "Cons. to hosp."))
 )
 
-ggplot()  +
+b <- ggplot()  +
   geom_point(data = discrete_dengue, 
-             aes(x = x, y = fx, shape = Legend, color = Legend)) +
-  labs(title = "Poisson estimation Dengue delay times",
+             aes(x = x, y = fx, shape = Legend, color = Legend), size = 0.7) +
+  geom_line(data = discrete_dengue,
+            aes(x = x, y = fx, color = Legend), size = 0.3) + 
+  labs(title = "Negative Binomial estimation Dengue delay times",
        shape = "Legend") +
   guides(shape=guide_legend(nrow=2,byrow=TRUE)) +
+  theme_bw() + 
   theme(legend.title = element_blank(), 
-        legend.position = "top", 
+        legend.position = c(0.99, 1),
+        legend.justification='right',
+        legend.direction='horizontal',
+        #legend.position = c(0, 1),
+        legend.text = element_text(size = 8),
         panel.background = element_blank(),
+        panel.border = element_blank(),  # Remove all borders
+        axis.line.x = element_line(color = "black"),  # Add back x-axis line
+        axis.line.y = element_line(color = "black"),
         plot.title = element_text(hjust = 0.5)) + 
-  scale_color_grey() +
+  scale_color_manual(values = c("#000080", "#ff5959", "#2c2c2c", "#aa4400")) +
   xlab("Time (days)") +
   ylab("Probability density")
 
 
-
+ggarrange(a, b,
+          labels = c("(a)", "(b)"),
+          ncol = 2, nrow = 1)
+          
 ################################################################################
 ################################## For ZIKV and CHIKV  ##################################
 ################################################################################
@@ -501,7 +551,7 @@ library(caret)
 library(nnet)
 
 df_confirm$hosp <- 1
-df_confirm[!is.na(df_confirm$deterioration_time), "hosp"] <- 0
+df_confirm[is.na(df_confirm$deterioration_time), "hosp"] <- 0                    ### Se hace correccion requerida
 df_confirm[is.na(df_confirm$estrato_), "estrato_"] <- 0
 
 table(df_confirm$nom_eve)
@@ -603,32 +653,37 @@ f <- function(i, df_confirm, x_columns){
            "errorSVM" = errorSVM, "MCSVM" = MCSVM, "MODELSSVM" = MODELSSVM, "NSVM" = NSVM))
 }
 
-library(parallel)
 
-cl <- makeCluster(detectCores() - 1)
+df <- df_confirm
+df <- df[, c("subregion", "Grupos.edad",  "hepatomeg", "dolor_abdo", "diarrea", "somnolenci",
+             "artralgias", "cefalea", "aum_hemato", "hipotensio", "caida_plaq", "hem_mucosa",
+             "erupcionr", "dolrretroo", "vomito")]
 
-clusterEvalQ(cl, {
-  library(dplyr)
-  library(ggplot2)
-  library(grid)
-  library(gridExtra) 
-  library(lubridate)
-  library(ggtext)
-  library(tsibble)
-  source("./auxiliar.R")
-})
-
-R <- NULL
-for (i in 3:10){
-  system.time(results <- parLapply(cl, 1:100, f, df_confirm, x_columns))
-  R <- c(R, results)
+for (column in names(df)[1:ncol(df)]){
+  df[, column] <- as.integer(as.factor(df[, column])) - 1
 }
 
+summary(cor(df[,3:ncol(df)])[upper.tri(cor(df[,3:ncol(df)]), diag = FALSE)])
 
-stopCluster(cl)
+library(lsr)
 
+vars <- rep("", 2*(ncol(df)-4))
+cramers <- rep(0, 2*(ncol(df)-4))
 
-for(i in 1:12){
+i <- 1
+for (column in names(df[,1:2])){
+  for (binary_column in names(df[,3:ncol(df)])){
+    contingency_table <- table(df[,column], df[,binary_column])
+    # Compute Cramér's V using the lsr package
+    cramers[i] <- cramersV(contingency_table)
+    vars[i] <- paste0(column, " x ", binary_column)
+    print(paste0(column, " x ", binary_column, ": ", cramers[i]))
+    i <- i + 1
+  }
+}
+summary(cramers)
+
+for(i in 1:100){
 
   smp_size <- floor(runif(1, 0.7, 0.8) * nrow(df_confirm))
   train_ind <- sample(seq_len(nrow(df_confirm)), size = smp_size, replace = FALSE)
@@ -677,9 +732,10 @@ for(i in 1:12){
 
   print(i)
 }
+save.image("~/PhD/N de S/crossvalidation.RData")
 
 
-lr_model = MODELS[seq(0,1000)[acc==max(acc[1:1000])]][[1]]
+lr_model = MODELS[seq(1,100)[acc==max(acc[1:100])]][[1]]
 summary(lr_model)
 
 columns_inte <- x_columns
@@ -688,6 +744,7 @@ library(class)
 for(col in columns_inte){
   train[, col] <- as.factor(train[, col])
 }
+
 knn(train[, columns_inte], test[, columns_inte], cl = as.factor(train$hosp), k = 3, prob=TRUE)
 
 worst <- seq(1, length(error))[error == max(error)]
@@ -749,15 +806,35 @@ results$Model <- as.factor(results$Model)
 ggplot(data = temp) +
   geom_boxplot(aes(y = value, x= tipo2, fill = Model)) +
   xlab("Score") + ylab("Metric") +
+  theme_minimal() +
   theme(
-    panel.background = element_blank(),
+    #panel.background = element_blank(),
     legend.title = element_blank(),
     legend.position = "top",
   )
+  
 
 
 summary(df)
 
+importance_metrics <- as.data.frame(importance(model_RF, type = 2))
+importance_metrics$Variable <- c("Area", "Ocupation", "Sexo", "subregion", "Age group",
+                                 "Headache", "Retro-ocular pain", "Myalgias", "Arthralgia",
+                                 "Rash", "Abdominal pain", "Vomiting", "Diarrhea", "Drowsiness",
+                                 "Hypotension","Hepatomegaly", "Mucosal bleeding", "Hypothermia",
+                                 "High hematocrit levels", "Low platelet count", "Fluid retention")
+
+
+# Create a ggplot barplot
+ggplot(importance_metrics, aes(x = reorder(Variable, MeanDecreaseGini), y = MeanDecreaseGini)) +
+  geom_bar(stat = "identity", fill = "grey") +
+  coord_flip() +  # Flip coordinates for better readability
+  labs(
+   # title = "Variable Importance (Mean Decrease in Gini)",
+    x = "Variable",
+    y = "Mean decrease in Gini"
+  ) +
+  theme_minimal()
 ### Here we are interested in the positivity of the confution matrix because it 
 ### estimates from data the probability that a person who was detected as hospitalized case
 ### by the model in fact has to need hospitalized
@@ -771,17 +848,37 @@ data.frame(acc = acc, accRF = accRF) %>% wilcox_test(acc ~ accRF)
 
 
 lmo <- step(glm(
-  "hosp ~ subregion + Grupos.edad + cefalea + dolor_abdo  + artralgias + 
-    erupcionr + dolrretroo  + vomito + diarrea + somnolenci + 
-    hem_mucosa + aum_hemato + cefalea * dolor_abdo  + artralgias * 
-    erupcionr + dolrretroo  * vomito + diarrea * somnolenci + 
-    hem_mucosa * aum_hemato + caida_plaq * hem_mucosa + dolor_abdo * diarrea", 
+  "hosp ~ area_ + sexo_ + subregion + Grupos.edad + 
+                     cefalea + dolrretroo + mialgias + artralgias + erupcionr +
+                     dolor_abdo + vomito + diarrea + somnolenci + hipotensio + hepatomeg + 
+                     hem_mucosa + hipotermia + aum_hemato + caida_plaq + acum_liqui", 
   data = train,
   family = binomial(link = "logit")
 ))
 summary(lmo)
 model <- step(lmo)
 summary(model)
+
+coefficients <- coef(model)
+odds_ratios <- exp(coefficients)
+conf_intervals <- confint(model)
+
+# Exponentiate the confidence intervals
+odds_ratios_ci <- exp(conf_intervals)
+
+model
+
+# Combine coefficients, odds ratios, and confidence intervals into a table
+results <- data.frame(
+  Variable = names(coefficients),
+  Coefficient = coefficients,
+  Odds_Ratio = odds_ratios,
+  CI_Lower = odds_ratios_ci[, 1],
+  CI_Upper = odds_ratios_ci[, 2]
+)
+
+# View the results
+print(results)
 
 #############################################################################
 ################################################################################
@@ -841,11 +938,34 @@ res.cox <- coxph(Surv(deterioration_time) ~  area_ + ocupacion_ + sexo_ + subreg
                    hem_mucosa + hipotermia + aum_hemato + caida_plaq + acum_liqui, data = hosp_dengue_df)
 step(res.cox)
 
-res.cox <- coxph(Surv(deterioration_time) ~  subregion + Grupos.edad + 
+res.cox <- coxph(Surv(deterioration_time, as.integer(df_confirm$hosp)-1) ~  subregion + Grupos.edad + 
                    dolrretroo + artralgias + erupcionr + dolor_abdo + 
                    vomito + hem_mucosa + caida_plaq, 
-                 data = hosp_dengue_df)
+                 data = df_confirm)
 summary(res.cox)
+
+test.ph <- cox.zph(res.cox)
+ggcoxzph(test.ph)
+
+
+
+library(surtvep)
+
+df_confirm$deterioration_time[is.na(df_confirm$deterioration_time)] <- df_confirm$consulting_time[is.na(df_confirm$deterioration_time)]
+res.coxnp <- coxtv(as.integer(df_confirm$hosp) - 1, 
+                   time = df_confirm$deterioration_time,  
+                   z = df[, c("subregion", "Grupos.edad",  "dolor_abdo", "diarrea", "somnolenci",
+                              "cefalea", "hepatomeg", "caida_plaq", "hem_mucosa",
+                              "erupcionr", "dolrretroo", "vomito")])
+
+plot(res.coxnp)
+
+
+
+coeff <- get.tvcoef(res.coxnp)
+confint <- confint(res.coxnp)
+confint
+
 
 df_confirm$Grupos.edad <- as.character(df_confirm$Grupos.edad)
 
@@ -861,6 +981,7 @@ res.cox2 <- coxph(Surv(consulting_time) ~  Grupos.edad + cefalea + dolrretroo +
                   data = df_confirm )
 
 summary(res.cox2)
+
 
 library(coxrobust)
 res.coxr <- coxr(Surv(consulting_time) ~  subregion + Grupos.edad + 
